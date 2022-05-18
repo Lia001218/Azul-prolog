@@ -11,6 +11,8 @@ create_players(Count_player, Players):-
         assing(strategy,X,Strategy,P)
     ),Players_created),
     enumerate(Players_created,1,Players).
+
+
 % Se crea la zona de preparacion , primero creamos una lista en la cual vamos a anadir en cada pocicion una lista de la siguiente manera
 % [[],[],[],[],[]] , luego enumeramos cada elemento de esa lista(creamos 5 listas porque la zona de preparacion tiene 5 filas)
 %luego se le asigna a cada pocision de la lista un size , los colores validos y todos loa colores , en un principio todos los colores,
