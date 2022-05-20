@@ -64,14 +64,14 @@ strategies([basic,greedy]).
 select_strategy(S):-
     strategies(St),
     random_permutation(St,[S|_]).
-ejecute_round(OldRound,[],NewRound,[]).
+ejecute_round(_,[],_,[]).
 ejecute_round(OldRound,[PlayerActual:Id|Players],NewRound,[Id:FacId|Accions]):-
     % Vemos cual es la estrategia del jugador actual
     member_dict(strategy,PlayerActual,St),
     % decimos quien juega ahora
     % info_log(["Player" ,Id,"empieza el turno"]),
     %  Se ejecuta la estrategia del jugador actual
-    Play =..[St,Game,PlayerActual,ActualRound,NewPlayer,LineId:FacId:Color],
+    Play =..[St,OldRound,PlayerActual,ActualRound,NewPlayer,LineId:FacId:Color],
     Play,
     % info_log([
     %     "Player seleciono",
@@ -88,7 +88,63 @@ ejecute_round(OldRound,[PlayerActual:Id|Players],NewRound,[Id:FacId|Accions]):-
     % ve el tablero de los jugadores antes de ejecutar la jugada
     member_dict(players,ActualRound,OldBoard),
     % Actualiza el tablero
-    assing(Id,OldBoard,NewPreparation_zone,ActualBoard),
+    assing(Id,OldBoard,NewPlayer,ActualBoard),
     assing(players,ActualRound,ActualBoard,NextRound),
     % manda a jugar al proximo jugador
     ejecute_round(NextRound,Players,NewRound,Accions).
+basic(Round,Player,NewRound,NewPlayer,Play):-
+    opcions(Round,Player,[O|_]),
+    !,
+    update_player_board(Player,Round,O,NewPlayer,Return,_),
+    update_game(Round,A,NewRound,Return).
+basic(Round, Player, NewRound, NewPlayer, none:Id:Color) :-
+    available_colors(Game, [Amount:Id:Color | _]), !,
+    update_game(Game, none:Id:Color, NewGame, Amount),
+    Neg is Amount* -1,
+    penalize(Player, Neg, NewPlayer).
+basic(Game, Player, Game, Player, none:none:none).
+opcions(Round , Player,Opcions):-
+    member_dict(factories,Round,Fac),
+    member_dict(board,Player,Board),
+    findall(LineId:FacId:Color,(
+        member_dict(LineId,Board,Line),
+        member_dict(zone,Line,Zone),
+        member(empty,Zone),
+        member_dict(valid,Line,ValidColors),
+        member_dict(FacId,Fac,ColFac),
+        member(Color,ValidColors),
+        member(Color,ColFac)
+    ),  Opcions),
+    not(length(Accions,0)).
+update_player_board(Player,Round,Line:Fac:Color,NewPlayer,Return,UpdatePlayer):-
+    update_line(Player,Round,Line:Fac:Color,Player_Temp,Diff,Amount).
+update_line(Player,Round,Line:Fac:Color,NewPlayer,Diff,Piece):-
+    member_dict(fatories,Round,Factories),
+    member_dict(F,Factories,Fac),
+    member_dict(board,Player,Board),
+    member_dict(L,Board,Line),
+    member_dict(zone,Line,Zone),
+    count(Fac,Color,Amount),
+    update(Zone,Amount,empty,Color,NewZone),
+    count(NewZone,empty,NewEmpty),
+    Diff is min(Empty-Amount,0),
+    Tiles is (min(NewEmpty - 1,0)* -(L-1)),
+    assing(zone,Line,NewZone,NewLine),
+    assing(valid,NewLine,[Color],ValidLine),
+    assing(Line,Board,ValidLine,NewBoard),
+    assing(board,Player,NewBoard,NewPlayer).
+count(List,Value,R):-
+    findall(1,member(Value,List),K),
+    length(K,R).
+% cambia en un numero igual a total de veces las repeticiones de 
+% value en List y las sustituye por NewValue
+update(List,0,_,_,List):-!.
+update(List,_,Value,_,List):-
+    not(member(Value,List)),!.
+
+update(List,Total,Value,NewValue,R):-
+    Total>0,
+    Z is Total-1,
+    my_concat(A,[Value|B],List),!,
+    update(B,Z,Value,NewValue,K),
+    my_concat(A,[NewValue|K],R).
