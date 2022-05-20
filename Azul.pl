@@ -14,6 +14,7 @@ create_players(Count_player,Players:players):-
     ),Player_created),
     enumerate(Player_created,1,Players).
 create_ground([-1,-1,-2,-2,-2,-3,-3]:ground).
+pieces_colors([blue,red,yellow,black,white]).
 % primero se crea una lista de 5 elementos , luego se enumera de izquierda a derecha la lista , de forma tal que 
 % en valor que le asigne el enum va a ser la cantidad de columnas que va a tener esa fila en la zona de preparacion
 % una vez hecho esto teniendo en cuenta le numero que le asigan el enum a la posicion i , se utiliza el metoda add
@@ -92,18 +93,18 @@ ejecute_round(OldRound,[PlayerActual:Id|Players],NewRound,[Id:FacId|Accions]):-
     assing(players,ActualRound,ActualBoard,NextRound),
     % manda a jugar al proximo jugador
     ejecute_round(NextRound,Players,NewRound,Accions).
-basic(Round,Player,NewRound,NewPlayer,Play):-
-    opcions(Round,Player,[O|_]),
+basic(Round,Player,NewRound,NewPlayer,O):-
+    options(Round,Player,[O|_]),
     !,
     update_player_board(Player,Round,O,NewPlayer,Return,_),
-    update_game(Round,A,NewRound,Return).
+    update_game(Round,O,NewRound,Return).
 basic(Round, Player, NewRound, NewPlayer, none:Id:Color) :-
-    available_colors(Game, [Amount:Id:Color | _]), !,
-    update_game(Game, none:Id:Color, NewGame, Amount),
+    valid_colors(Round, [Amount:Id:Color | _]), !,
+    update_game(Round, none:Id:Color, NewRound, Amount),
     Neg is Amount* -1,
     penalize(Player, Neg, NewPlayer).
-basic(Game, Player, Game, Player, none:none:none).
-opcions(Round , Player,Opcions):-
+basic(Round, Player, Round, Player, none:none:none).
+options(Round , Player,Optionss):-
     member_dict(factories,Round,Fac),
     member_dict(board,Player,Board),
     findall(LineId:FacId:Color,(
@@ -114,21 +115,26 @@ opcions(Round , Player,Opcions):-
         member_dict(FacId,Fac,ColFac),
         member(Color,ValidColors),
         member(Color,ColFac)
-    ),  Opcions),
-    not(length(Accions,0)).
+    ),  Optionss),
+    not(length(Optionss,0)).
 update_player_board(Player,Round,Line:Fac:Color,NewPlayer,Return,UpdatePlayer):-
-    update_line(Player,Round,Line:Fac:Color,Player_Temp,Diff,Amount).
-update_line(Player,Round,Line:Fac:Color,NewPlayer,Diff,Piece):-
+    update_line(Player,Round,Line:Fac:Color,Player_Temp,Diff,Amount),
+    member_dict(board,Player_Temp,Board),
+    review_lines(Player_Temp,Board:sorted,UpdatePlayer),
+    Return is Amount-Diff,
+    penalize(Player_Temp,Diff,NewPlayer).
+update_line(Player,Round,Line:F:Color,NewPlayer,Diff,Piece):-
     member_dict(fatories,Round,Factories),
     member_dict(F,Factories,Fac),
     member_dict(board,Player,Board),
     member_dict(L,Board,Line),
     member_dict(zone,Line,Zone),
     count(Fac,Color,Amount),
+    count(Zone,empty,Empty),
     update(Zone,Amount,empty,Color,NewZone),
     count(NewZone,empty,NewEmpty),
     Diff is min(Empty-Amount,0),
-    Tiles is (min(NewEmpty - 1,0)* -(L-1)),
+    Piece is (min(NewEmpty - 1,0)* -(L-1)),
     assing(zone,Line,NewZone,NewLine),
     assing(valid,NewLine,[Color],ValidLine),
     assing(Line,Board,ValidLine,NewBoard),
@@ -148,3 +154,147 @@ update(List,Total,Value,NewValue,R):-
     my_concat(A,[Value|B],List),!,
     update(B,Z,Value,NewValue,K),
     my_concat(A,[NewValue|K],R).
+update_game(Round,_:Fac:Color,NewGame,ActualPiece):-
+    member_dict(factorias,Round,FacRound),
+    member_dict(Fac,FacRound,Factories),
+    findall(X,(
+        member(X,Factories),
+        not(member(X,[empty,first,Color]))
+    ),ToCenter),
+    add([],4,empty,NewFac),
+    assing(Fac,FacRound,NewFac,TempFacs),
+    member_dict(center,TempFacs,Center),
+    my_concat(ToCenter,Center,NewCenter),
+    assing(center,TempFacs,NewCenter,NewFacs),
+    assing(factorias,Round,NewFacs,Temp),
+    member_dict(outs,Round,Outs),
+    member_dict(Color,Outs,Number),
+    Sum is Number + ActualPiece,
+    assing(Color,Outs,Sum,NewOuts),
+    assing(outs,Temp,NewOuts,NewGame).
+valid_colors(Round,Optionss):-
+    member_dict(factories,Round,Fac),
+    findall(Count:FacId,Color,(
+        member_dict(FacId,Fac,F),
+        member(Color,F),
+        Color \= empty,
+        count(F,Color,Count)
+    ),  Optionss),
+    not(length(Optionss,0)).
+penalize(Player,Amount,NewPlayer):-
+    Amount<0,
+    member_dict(penalties,Player,Penalties),
+    length(Penalties,Sz),
+    Sz >0,!,
+    my_concat([P1],R,Penalties),
+    assing(penalties,Player,R,TempPlayer1),
+    member_dict(score,Player,Score),
+    NewScore is Score+P1,
+    assing(score,TempPlayer1,NewScore,TempPlayer2),
+    Times is Amount+1,
+    penalize(TempPlayer2,Times,NewPlayer).
+penalize(Player,_,Player).
+review_lines(P,[],P).
+review_lines(Player,[_:Line|Lines],NewPlayer):-
+    clean_line(Player,Lines,ActualPlayer),!,
+    review_lines(ActualPlayer,Line,NewPlayer).
+review_lines(Player,[_|Lines],NewPlayer):-
+    review_lines(Player,Lines,NewPlayer).
+review_lines(Player,Lines:sorted,NewPlayer):-
+    indexed_sort(Lines,Sorted),
+    review_lines(Player,Sorted,NewPlayer).
+clean_line(Player,L,NewPlayer):-
+    member_dict(board,Player,Board),
+    member_dict(L,Board,Line),
+    member_dict(all,Line,Colors),
+    member_dict(valid,Line,[C]),
+    member_dict(zone,Line,ActualZone),
+    add([],L,C,ActualZone),
+    my_concat(A,[C|B],Colors),
+    my_concat(A,B,List),
+    assing(all,Line,List,TempLine),
+    assing(valid,TempLine,List,TempLine1),
+    column_of(L,C,Column),
+    update_score(Player,(L,Column),TempPlayer),
+    add([],L,empty,Zone),
+    assing(zone,TempLine1,Zone,TempLine2),
+    assing(L,Board,TempLine2,NewBoard),
+    assing(board,TempPlayer,NewBoard,NewPlayer).
+column_of(Line,Color,Column):-
+    pieces_colors(Colors),
+    index_of(Color,Colors,Idx),
+    Column is (Idx + Line-1)mod 5+1.
+index_of(Value,List,Index):-
+    my_concat(A,[Value|_],List),
+    length(A,Index).
+index_of(_,_,-1).
+update_score(Player,(Line,Column),NewPlayer):-
+    member_dict(board,Player,Board),
+    member_dict(Line,Board,Lines),
+    member_dict(zone,Lines,Zone),
+    count(Zone,empty,0),!,
+    pieces_score(Player,(Lines,Column),Score),
+    member_dict(score,Player,PScore),
+    Sum is Score+PScore,
+    update_table(Player,(Line,Column),ActualPlayer),
+    assing(score,ActualPlayer,Sum,NewPlayer).
+update_score(P,_,P).
+pieces_score(Player,(Row,Column),Score):-
+    member_dict(table,Player,Table),
+    my_concat(Table,[(Row,Column)],NewTable),
+    line_score(NewTable,(Row,Column),RowScore),
+    invert_axis(NewTable,InvertedAxis),
+    line_score(InvertedAxis,(Column,Row),RowScore),
+    invert_axis(NewTable,InvertedAxis),
+    line_score(InvertedAxis,(Column,Row),ColumnScore),
+    Score is RowScore+ColumnScore.
+line_score(List,Piece,Score):-
+    make_intervals(List,Interval),
+    findall(X,(
+        member(X,Interval),
+        member(Piece,X)
+    ), [Adyacents]),
+    length(Adyacents,Score).
+make_intervals(List,Index):-
+    is_list(List),
+    sort(List,List_Sorted),
+    blocks(List_Sorted,Index).
+blocks([],[]).
+blocks([X|L],Index):-
+    consecutive(L,X,C,R),
+    my_concat([X],C,B),
+    blocks(R,K),
+    my_concat([B],K,Index).
+consecutive([(X,B)|L],(X,Y),C,R):-
+    B is Y+1.!,
+    consecutive(L,(X,B),A,R),
+    my_concat([(X,B)],A,C).
+consecutive(L,_,[],L).
+invert_axis(L,R):-
+    findall((Y,X),member((X,Y),L),R).
+indexed_sort(L,R):-
+    findall(X:Y,member_dict(X,L,Y),I),
+    sort(I,O),
+    findall(X:Y,member_dict(X,O,Y),R).
+greedy(Round,Player,NewRound,NewPlayer,O):-
+    options(Round,Player,Optionss),!,
+    findall(Score:Options,(
+        member(Options,Optionss),
+        update_player_board(Player,Round,Options,_,_,Player_Temp),
+        member_dict(score,Player_Temp,Score)
+    ),Choice),
+    sort(Choice,Sorted),
+    my_concat(_,[_:O],Sorted),
+    update_player_board(Player,Round,O,NewPlayer,Result,_),
+    update_game(Round,O,NewRound,Result).
+greedy(Round,Player,NewRound,NewPlayer,Amount):-
+    valid_colors(Round,Options),
+    sort(Options,[Amount:id:Color|_]),
+    update_game(Round,none:id:Color,NewRound,Amount),
+    Neg is Amount* -1,
+    penalize(Player,Neg,NewPlayer).
+greedy(Round,Player,Round,Player,none:none:none).
+update_table(Player,Piece,NewPlayer):-
+    member_dict(table,Player,Table),
+    add(Table,1,Piece,NewTable),
+    assing(table,Player,NewTable,NewPlayer).
