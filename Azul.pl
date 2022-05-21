@@ -255,31 +255,40 @@ line_score(List,Piece,Score):-
         member(Piece,X)
     ), [Adyacents]),
     length(Adyacents,Score).
+%Devuelve una lista con todos los elementos que sean adyacentes, si hay mas de uno no lo cuenta
 make_intervals(List,Index):-
     is_list(List),
     sort(List,List_Sorted),
     blocks(List_Sorted,Index).
+%Devuelve todos los elemetos que son consecutivos en la lista , si no devuelve una lista vacia
 blocks([],[]).
 blocks([X|L],Index):-
     consecutive(L,X,C,R),
     my_concat([X],C,B),
     blocks(R,K),
     my_concat([B],K,Index).
+% Devuelve dos listas, la lista C donde van a estra los puntos que son adyacetes en L , y en R devuelve el resto
 consecutive([(X,B)|L],(X,Y),C,R):-
     B is Y+1.!,
     consecutive(L,(X,B),A,R),
     my_concat([(X,B)],A,C).
 consecutive(L,_,[],L).
+% invierte L de forma tal que si en el existe el par X,Y , se obtiene en R el par Y,X
 invert_axis(L,R):-
     findall((Y,X),member((X,Y),L),R).
+% Toma el diccionario   que esat en L, lo invierte de forma tal que si existe X:Y en L entonces se obtiene
+%  en R Y:X,lo ordena por Y y vuelve a invertir el diccionario como estaba inicialmente.
 indexed_sort(L,R):-
     findall(X:Y,member_dict(X,L,Y),I),
     sort(I,O),
     findall(X:Y,member_dict(X,O,Y),R).
+% Se obtienen , todas las posibles jugadas , se calcula que puntuacion se obtiene al efectuarlas,se guardan
+% las jugados con su puntuacion se ordena en una lista , y nos quedamos la que nos de ayor score y esa es 
+% finalmente la que realiza el jugador 
 greedy(Round,Player,NewRound,NewPlayer,O):-
-    options(Round,Player,Optionss),!,
+    options(Round,Player,Options),!,
     findall(Score:Options,(
-        member(Options,Optionss),
+        member(Options,Options),
         update_player_board(Player,Round,Options,_,_,Player_Temp),
         member_dict(score,Player_Temp,Score)
     ),Choice),
@@ -287,6 +296,7 @@ greedy(Round,Player,NewRound,NewPlayer,O):-
     my_concat(_,[_:O],Sorted),
     update_player_board(Player,Round,O,NewPlayer,Result,_),
     update_game(Round,O,NewRound,Result).
+% Si no puede poner ninguna pieza en el tablero de preparcion , toma la opcion que menos lo penalize
 greedy(Round,Player,NewRound,NewPlayer,Amount):-
     valid_colors(Round,Options),
     sort(Options,[Amount:id:Color|_]),
@@ -294,6 +304,7 @@ greedy(Round,Player,NewRound,NewPlayer,Amount):-
     Neg is Amount* -1,
     penalize(Player,Neg,NewPlayer).
 greedy(Round,Player,Round,Player,none:none:none).
+% Annade la nueva pieza al tablero del jugador actual y le asigan el tablero actualizado al jugador actual
 update_table(Player,Piece,NewPlayer):-
     member_dict(table,Player,Table),
     add(Table,1,Piece,NewTable),
