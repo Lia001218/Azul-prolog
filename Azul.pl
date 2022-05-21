@@ -360,3 +360,163 @@ clean_players(Round,NewRound):-
         assing(score,NewPlayer,Score,Player)
     ), NewPlayers),
     assing(players,Round,NewPlayers,NewRound).
+main(Player,Factories):-
+    new_game(Players,Factories,Round),
+    new_round(Round,NewRound),
+    run(NewRound,[],EndedRound),!.
+main(_,_).
+new_game(Players,Factories,[P,A:amounts,O:out,F:factories]):-
+    pieces_colors(C),
+    create_players(Players,P),
+    findall(20:X,member(X,C),A),
+    findall(0:X,member(X,C),O),
+    add([],4,empty,E),
+    add([],Factories,E,EF),
+    enumerate(EF,1,NF),
+    assing(center,NF,[],F).
+new_round(Round,NewRound):-
+    fill(Round,TempRound1),
+    member_dict(amounts,TempRound1,Amounts),
+    findall(List,(
+        member_dict(Color,Amounts,Count),
+        add([],Count,Color,list)
+    ),  ColorGroups),
+    concat_all(ColorGroups,ColorList),
+    random_permutation(ColorList,ColorOrder),
+    member_dict(factories,TempRound1,RoundFac),
+    remove_prop(center,RoundFac,SimpleFac),
+    findall(Fac,member(Fac:_,SimpleFac),RawFac),
+    use_fac(RawFac,ColorOrder,TempFac),
+    concat_all(TempFac,UsedPieces),
+    findall(NewQ:Color,(
+        member_dict(Color,Amount,COld),
+        count(UsedPieces,Color,Used),
+        NewQ is COld-Used
+    ) , NewAmounts),
+    assing(amounts,TempRound1,NewAmounts,TempRound2),
+    enumerate(TempFac,1,EnumFac),
+    assing(center,EnumFac,[first],ALLFac),
+    assing(factories,TempRound2,AllFac,NewRound).
+fill(Round,NewRound):-
+    member_dict(amounts,Round,Amount),
+    member_dict(factories,Round,Factories),
+    length(Factories,FacSz),
+    findall(X,member(X:_,Amount),Count),
+    sum_list(Count,Sum),
+    Sum <FacSz*4,!,
+    member_dict(ounts,Round,CAmount),
+    findall(RealAmount:Color,(
+        member_dict(color,Amounts,CAmount),
+        member_dict(Color,Outs,COut),
+        RealAmount is COut + CAmount
+    ), NewAmounts),
+    assing(amounts,Round,NewAmounts,TempRound),
+    findall(0:Color,member(_:Color,Outs),Newouts),
+    assing(outs,TempRound,NewOuts,NewRound).
+fill(Round,Round).
+concat_all([],[]).
+concat_all([X|Y],R):-
+    concat_all(Y,L),
+    my_concat(X,L,R).
+run(Round,Events,NewRound):-
+    order_players(Round,Players),
+    ejecute_round(Round,Players,TempRound,ActualEvents),
+    my_concat(Events,ActualEvents,NewEvents),
+    validate(TempRound,NewEvents,NewRound).
+order_players(Round,NewPlayers):-
+    member_dict(players,Round,Players),
+    indexed_sort(Players,OriginalOrder),
+    sort_players(OriginalOrder,NewPlayers).
+sort_players(Players,NewPlayers):-
+    initial_player(PId),
+    my_concat(A,[Player:PId|B],Players),
+    my_concat([Player:PId|B],A,NewPlayers).
+initial_player(1).
+validate(Round,Events,NewRound):-
+    member_dict(factories,Round,Factories),
+    findall(Fac,member(Fac:_,Factories),FacList),
+    concat_all(FacList,AllPieces),
+    length(AllPieces,Sz),
+    count(AllPieces,empty,Sz),!,
+    clean_players(Round,NewRound),
+    final_or_continue(TempRound,Events,NewRound).
+validate(Round,Events,NewRound):-
+    run(Round,Events,NewRound).
+final_or_continue(Round,_,NewRound):-
+    ending_condition(Round),!,
+    calculate_score(Round,NewRound).
+final_or_continue(Round,Events,NewRound):-
+    initial_player(ID),
+    get_value(center,Events,NewID,ID),
+    retract(initial_player(ID)),
+    asserta(initial_player(NewID)),
+    member_dict(players,Round,Players),
+    member_dict(NewID,Players,FirstPlayer),   
+    penalize(FirstPlayer,-1,NewFirstPlayer),
+    assing(NewID,Players,NewFirstPlayer,NewPlayers),
+    assing(players,Round,NewPlayers,TempRound1),
+    new_round(TempRound1,TempRound2),
+    run(TempRound2,[],NewRound).
+get_value(P,O,V,_):-
+    member_dict(P,O,V).
+get_value(_,_,D,D).
+ending_condition(Round):-
+    member_dict(players,Round,P),
+    member(X:_,P),
+    any_full_row(X,_).
+any_full_row(Player,RowC):-
+    member_dict(table,Player,Table),
+    findall(true,(
+        bagof(Column, member((_,Column),Table),Column),
+        length(Columns,5)
+    ), Rows),
+    length(Rows,RowsC),
+    any(Rows).
+any(true).
+any(L):- 
+    is_list(L),
+    member(true,L).
+calculate_score(Round,NewRound):-
+    member_dict(ID,Players,PLayer),
+    table_score(Player,TableScore),
+    member_dict(score,Player,Score),
+    NewScore is Score + TableScore,
+    assing(players,Round,NewPlayers,NewRound).
+table_score(P,S):-
+    full_rows(P,RS),
+    member_dict(table,P,T),
+    invert_axis(T,RT),
+    full_rows([RT:table],CS),
+    full_colors(P,DS),
+    S is RS*2+CS*7+10*Ds.
+full_rows(Player,RowC):-
+    any_full_row(Player,RowC),!.
+full_rows(_,0).
+full_colors(Player,Amount):-
+    member_dict(table,Player,Table),
+    findall(true,(
+        member((1,Col),Table),
+        cascade((1,Col),Table)
+    ),  List),
+    length(List,Amount).
+cascade((5,Col),Table):-
+    member((5,Col),Table).
+cascade((Row,Column),Table):-
+    member((Row,Column),Table),
+    NewRow is Row + 1,
+    NewCol is max((Col+1)mod 6,1),
+    cascade((NewRow,NewCol),Table).
+use_fac([],_,[]).
+use_fac(Factories,[],Factories).
+use_fac([[]|Factories],Pieces,[[]|Result]):-
+    use_fac(Factories,Pieces,Result).
+use_fac([[_|Fac1]|Factories],[Piece|Pieces],[[Piece|Res1]|Result]):-
+    use_fac([Fac1|Factories],Pieces,[Res1|Result]).
+remove_prop(_,[],[]).
+remove_prop(P,[_:P|R],L):- !,
+    remove_prop(P,R,L).
+remove_prop(P,[X:Y|R],[X:Y|L]):-
+    Y\=P,
+remove_prop(P,R,L).
+
+    
