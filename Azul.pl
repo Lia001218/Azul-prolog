@@ -212,7 +212,7 @@ penalize(Player,Amount,NewPlayer):-
 penalize(Player,_,Player).
 % reviza las lineas que estan llenas y las limpia
 review_lines(P,[],P).
-review_lines(Player,[_:Line|Lines],NewPlayer):-
+review_lines(Player,[_:Line|_],NewPlayer):-
     clean_line(Player,Line,ActualPlayer),!,
     review_lines(ActualPlayer,Line,NewPlayer).
 review_lines(Player,[_|Lines],NewPlayer):-
@@ -360,11 +360,18 @@ clean_players(Round,NewRound):-
         assing(score,NewPlayer,Score,Player)
     ), NewPlayers),
     assing(players,Round,NewPlayers,NewRound).
-main(Player,Factories):-
+% Prepara la partida con el numero de jugadores y fabricas
+main(Players,Factories):-
     new_game(Players,Factories,Round),
     new_round(Round,NewRound),
     run(NewRound,[],EndedRound),!.
 main(_,_).
+% para crear un nuevo juego , primero creamos los jugadores , luego obtenemos las piezas que vamos a utilizar
+% 20 de cada color , luego creamos una lista de tamanno 4 que de momento va a tener en todas las pocisiones empty
+% luego creamos una lista donde cada posicion de la lista va ser la lista mencionada anteriormente, y ademas cada
+% poscion va representar una fabrica
+% NOTA IMPORTANTE !!!! Se agrega el centro vacio a la lista de fabricas, trataremos el centro como una fabrica , 
+% lo que a diferecia del resto de las fabricas no va a estar enumerado , aparecera en la lista seguido de : center
 new_game(Players,Factories,[P,A:amounts,O:out,F:factories]):-
     pieces_colors(C),
     create_players(Players,P),
@@ -374,12 +381,15 @@ new_game(Players,Factories,[P,A:amounts,O:out,F:factories]):-
     add([],Factories,E,EF),
     enumerate(EF,1,NF),
     assing(center,NF,[],F).
+% Primero se comprueba cuantas piezas se necesitan para la siguiente ronda,luego toma todas las piezas
+% que se tengan y seleccionan de forma random para empezarlas a annadir a las fabricas, se guardan las 
+% piezas seleccionadas se actualizan la cantidad de pieazas y se crea una nueva ronda
 new_round(Round,NewRound):-
     fill(Round,TempRound1),
     member_dict(amounts,TempRound1,Amounts),
     findall(List,(
         member_dict(Color,Amounts,Count),
-        add([],Count,Color,list)
+        add([],Count,Color,List)
     ),  ColorGroups),
     concat_all(ColorGroups,ColorList),
     random_permutation(ColorList,ColorOrder),
@@ -389,19 +399,20 @@ new_round(Round,NewRound):-
     use_fac(RawFac,ColorOrder,TempFac),
     concat_all(TempFac,UsedPieces),
     findall(NewQ:Color,(
-        member_dict(Color,Amount,COld),
+        member_dict(Color,Amounts,COld),
         count(UsedPieces,Color,Used),
         NewQ is COld-Used
     ) , NewAmounts),
     assing(amounts,TempRound1,NewAmounts,TempRound2),
     enumerate(TempFac,1,EnumFac),
-    assing(center,EnumFac,[first],ALLFac),
+    assing(center,EnumFac,[first],AllFac),
     assing(factories,TempRound2,AllFac,NewRound).
+% fill se encarga de que las fabricas esten llenas en la siguiente ronda
 fill(Round,NewRound):-
-    member_dict(amounts,Round,Amount),
+    member_dict(amounts,Round,Amounts),
     member_dict(factories,Round,Factories),
     length(Factories,FacSz),
-    findall(X,member(X:_,Amount),Count),
+    findall(X,member(X:_,Amounts),Count),
     sum_list(Count,Sum),
     Sum <FacSz*4,!,
     member_dict(ounts,Round,CAmount),
@@ -411,37 +422,45 @@ fill(Round,NewRound):-
         RealAmount is COut + CAmount
     ), NewAmounts),
     assing(amounts,Round,NewAmounts,TempRound),
-    findall(0:Color,member(_:Color,Outs),Newouts),
+    findall(0:Color,member(_:Color,Outs),NewOuts),
     assing(outs,TempRound,NewOuts,NewRound).
 fill(Round,Round).
 concat_all([],[]).
 concat_all([X|Y],R):-
     concat_all(Y,L),
     my_concat(X,L,R).
+% Ejcuta el juego hasta el final , obtiene las acciones de los jugadores en la ronda actual, ejcuta las instrucciones por jugador
+% comprueba si la ronda actual es el fin del juego si lo es finaliza y en caso contrario continua 
+% ejcutando
 run(Round,Events,NewRound):-
     order_players(Round,Players),
     ejecute_round(Round,Players,TempRound,ActualEvents),
     my_concat(Events,ActualEvents,NewEvents),
     validate(TempRound,NewEvents,NewRound).
+% Rotorna el orden de los jugadores en el ronda actual
 order_players(Round,NewPlayers):-
     member_dict(players,Round,Players),
     indexed_sort(Players,OriginalOrder),
     sort_players(OriginalOrder,NewPlayers).
+% retorna los jugadores ordenados de 1 hasta N donde N es el numero de los jugadores
 sort_players(Players,NewPlayers):-
     initial_player(PId),
     my_concat(A,[Player:PId|B],Players),
     my_concat([Player:PId|B],A,NewPlayers).
 initial_player(1).
+% comprueba si en esta ronda se acaba el juego 
 validate(Round,Events,NewRound):-
     member_dict(factories,Round,Factories),
     findall(Fac,member(Fac:_,Factories),FacList),
     concat_all(FacList,AllPieces),
     length(AllPieces,Sz),
     count(AllPieces,empty,Sz),!,
-    clean_players(Round,NewRound),
+    clean_players(Round,TempRound),
     final_or_continue(TempRound,Events,NewRound).
 validate(Round,Events,NewRound):-
     run(Round,Events,NewRound).
+%  Verifica si el juego a terminado de ser asi calcula la putuacion y en caso contrario sigue ejucutando
+% el juego
 final_or_continue(Round,_,NewRound):-
     ending_condition(Round),!,
     calculate_score(Round,NewRound).
@@ -460,14 +479,16 @@ final_or_continue(Round,Events,NewRound):-
 get_value(P,O,V,_):-
     member_dict(P,O,V).
 get_value(_,_,D,D).
+% comprueba la condicion de finalizacion de juego
 ending_condition(Round):-
     member_dict(players,Round,P),
     member(X:_,P),
     any_full_row(X,_).
-any_full_row(Player,RowC):-
+% comprueba si el jugador tiene alguna fila completa en su pared
+any_full_row(Player,RowsC):-
     member_dict(table,Player,Table),
     findall(true,(
-        bagof(Column, member((_,Column),Table),Column),
+        bagof(Column, member((_,Column),Table),Columns),
         length(Columns,5)
     ), Rows),
     length(Rows,RowsC),
@@ -476,22 +497,30 @@ any(true).
 any(L):- 
     is_list(L),
     member(true,L).
+% calcula la puntuacion final de todos los jugadores
 calculate_score(Round,NewRound):-
-    member_dict(ID,Players,PLayer),
-    table_score(Player,TableScore),
-    member_dict(score,Player,Score),
-    NewScore is Score + TableScore,
+    member_dict(players,Round,Players),
+    findall(NewPlayer:ID,(
+        member_dict(ID,Players,Player),
+        table_score(Player,TableScore),
+        member_dict(score,Player,Score),
+        NewScore is Score + TableScore,
+        assing(score,Player,NewScore,NewPlayer)
+    ), NewPlayers),
     assing(players,Round,NewPlayers,NewRound).
+% calcula la puntuacion del muro del jugador
 table_score(P,S):-
     full_rows(P,RS),
     member_dict(table,P,T),
     invert_axis(T,RT),
     full_rows([RT:table],CS),
     full_colors(P,DS),
-    S is RS*2+CS*7+10*Ds.
+    S is RS*2+CS*7+10*DS.
+
 full_rows(Player,RowC):-
     any_full_row(Player,RowC),!.
 full_rows(_,0).
+% cuenta el numero de colores completps en el muro del jugador
 full_colors(Player,Amount):-
     member_dict(table,Player,Table),
     findall(true,(
@@ -499,6 +528,7 @@ full_colors(Player,Amount):-
         cascade((1,Col),Table)
     ),  List),
     length(List,Amount).
+% 
 cascade((5,Col),Table):-
     member((5,Col),Table).
 cascade((Row,Column),Table):-
@@ -506,12 +536,14 @@ cascade((Row,Column),Table):-
     NewRow is Row + 1,
     NewCol is max((Col+1)mod 6,1),
     cascade((NewRow,NewCol),Table).
+% 
 use_fac([],_,[]).
 use_fac(Factories,[],Factories).
 use_fac([[]|Factories],Pieces,[[]|Result]):-
     use_fac(Factories,Pieces,Result).
 use_fac([[_|Fac1]|Factories],[Piece|Pieces],[[Piece|Res1]|Result]):-
     use_fac([Fac1|Factories],Pieces,[Res1|Result]).
+% Elimina de la lista , los elementos que sean un diccionario donde la llave sea P
 remove_prop(_,[],[]).
 remove_prop(P,[_:P|R],L):- !,
     remove_prop(P,R,L).
