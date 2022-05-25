@@ -1,3 +1,4 @@
+:- dynamic initial_player/1.
 % se crea una lista de tamanno igual a la cantidad de jugadores,y se le annade a cada posicion (que cada posicion
 % representa un jugador) la zona de preparacion y el piso,luego se le asigana una estrategia de forma ramdon a cada
 % jugador y se crea una lista en la cual en la pocision i contando a partir de 1 va a estar la estrategia del jugador
@@ -66,49 +67,81 @@ select_strategy(S):-
     strategies(St),
     random_permutation(St,[S|_]).
 ejecute_round(Round,[],Round,[]).
-ejecute_round(Round,[PlayerActual:Id|Players],NewRound,[Id:FacId|Events]):-
-    % Vemos cual es la estrategia del jugador actual
-    member_dict(strategy,PlayerActual,St),
-    % decimos quien juega ahora
-    writeln("Player" + Id + "empieza su turno"),
-    % info_log(["Player" ,Id,"empieza el turno"]),
-    %  Se ejecuta la estrategia del jugador actual
-    Play =..[St,Round,PlayerActual,ActualRound,NewPlayer,LineId:FacId:Color],
+ejecute_round(Round, [P1:Id|Players], NewRound, [Id:Fid|Events]) :-
+    member_dict(strategy, P1, St),
+    open("azul.txt",append,Fd),
+    write(Fd,["Player ", Id, " empieza el turno --------------------"]),
+    nl(Fd),
+    close(Fd),
+    Play=..[St, Round, P1, TempRound1, NewP1, Lid:Fid:Color],
     Play,
-    writeln("Player seleciono el " +Color +"de","FacId"+ "y lo coloca en la linea" + LineId),
-    % info_log([
-    %     "Player seleciono",
-    %     Color ,
-    %     "de",
-    %     FacId ,
-    %     "y lo coloca en linea",
-    %     LineId]),
-    % ve el estado de las factorias en la ronda actual
-    member_dict(factories,ActualRound,Facs),
-    writeln(Facs:factories),
-    % debug_log([Facs:factories]),
-    % info_log([
-    %     NewPreparation_zone]),
-    % ve el tablero de los jugadores antes de ejecutar la jugada
-    member_dict(players,ActualRound,OldPlayer),
-    % Actualiza el tablero
-    assing(Id,OldPlayer,NewPlayer,ActualPlayer),
-    assing(players,ActualRound,ActualPlayer,NextRound),
-    % manda a jugar al proximo jugador
-    ejecute_round(NextRound,Players,NewRound,Events).
-% Se obtienes todas las posibles opciones de jugada y se toma la primera de la lista
-basic(Round,Player,NewRound,NewPlayer,O):-
-    options(Round,Player,[O|_]),
-    !,
-    update_player_preparation(Player,Round,O,NewPlayer,Return,_),
-    update_game(Round,O,NewRound,Return).
+    writeln("play"),
+    open("azul.txt",append,FD),
+    write(FD,[ 
+        "Player selecciono todas las piezas de ",
+        Color,
+        " de la fabrica",
+        Fid,
+        " y lo coloco en la linea ",
+        Lid
+    ]),
+    nl(FD),
+    print_wall(P1:wall),
+    member_dict(factories, TempRound1, Facs),
+    writeln(FD,[Facs:factories]),
+    nl(FD),
+    writeln(FD,[ 
+        NewP1:pattern,
+        "\n----------------------------------------------"
+    ]),
+    nl(FD),
+    close(FD),
+    member_dict(players, TempRound1, OldPlayers),
+    assing(Id, OldPlayers, NewP1, CurPlayers),
+    assing(players, TempRound1, CurPlayers, TempRound2),
+    ejecute_round(TempRound2, Players, NewRound, Events).
+generate_wall((6,1), _, Wall, Wall).
+generate_wall((Row,6), Board, Ac, [Ac|R]) :-
+    NewRow is Row+1,
+    generate_wall((NewRow,1),Board, [], R),!.
+generate_wall((X,Y), Table, Ac, R) :-
+    member((X,Y), Table), !,
+    column_of(X,C,Y),
+    append(Ac, [C], NewAc),
+    NewY is Y+1,
+    generate_wall((X,NewY), Table, NewAc, R).
+generate_wall((X,Y), Table, Ac, R) :-
+    append(Ac, [' - '], NewAc),
+    NewY is Y+1,
+    generate_wall((X,NewY), Table, NewAc, R).
+
+print_wall(Player:wall) :-
+    open("wall.txt", append, Fd),
+    write(Fd, "Muro del  Jugador: \n"),
+    nl(Fd),
+    member_dict(wall, Player, Wall),
+    sort(Wall, SortedWall),
+    generate_wall((1,1), SortedWall ,[], FinalWall),
+    findall(FinalWall, (
+        member(X, FinalWall),
+        write(Fd,X),
+        nl(Fd)
+    ), _),
+    nl(Fd),
+    close(Fd).
 % si la opcion no es valida , es decir no se puede poner en el muro de preparacion , de
 % igual forma se toma la primera y penlaiza
+basic(Round, Player, NewRound, NewPlayer, O) :-
+    options(Round, Player, [O|_]), !,
+    update_player_preparation(Player, Round, O,1, NewPlayer, Return, _),
+    writeln("basic"),
+    update_game(Round, O, NewRound, Return).
 basic(Round, Player, NewRound, NewPlayer, none:Id:Color) :-
     valid_colors(Round, [Amount:Id:Color | _]), !,
     update_game(Round, none:Id:Color, NewRound, Amount),
+    writeln("basic1"),
     Neg is Amount* -1,
-    penalize(Player, Neg, NewPlayer).
+    penalize(Player, Neg,1, NewPlayer).
 basic(Round, Player, Round, Player, none:none:none).
 % obtiene todos los movientos validos , para la zona de preparacion
 options(Round , Player,Options):-
@@ -126,50 +159,55 @@ options(Round , Player,Options):-
     not(length(Options,0)).
 % Actualiza las lineas de la zona de preparacion, obtiene el tablero y verifiva si alguna de las filas 
 % de preparacion se lleno y penaliza al jugador.
-update_player_preparation(Player,Round,Line:Fac:Color,NewPlayer,Return,UpdatePlayer):-
-    update_line(Player,Round,Line:Fac:Color,Player_Temp,Diff,Amount),
-    member_dict(preparation,Player_Temp,Preparation),
-    review_lines(Player_Temp,Preparation:sorted,UpdatePlayer),
+update_player_preparation(Player, Round, L:F:Color,P, NewPlayer, Return, FinalPlayer) :-
+    update_line(Player, Round, L:F:Color, TempPlayer0, Diff, Amount),
+    writeln("UL"),
+    member_dict(preparation, TempPlayer0, Preparation),
+    % log_mode(ModeId),
+    % set_log_mode(warning),
+    verify_lines(TempPlayer0, Preparation:unsorted,P, FinalPlayer),
+    writeln("VL"),
+    % set_log_mode_by_id(ModeId),
     Return is Amount-Diff,
-    penalize(Player_Temp,Diff,NewPlayer).
+    penalize(TempPlayer0, Diff,P, NewPlayer).
 % Obtiene la zona de preparacion ,cuenta la cantidad de espacios vacios asi como la cantidad de piezas tomadas
 % de la fabrica,luego colca las fichas tomadas en la zona de preparacion , todas las que sean posibles,se halla 
 % la diferencia entre los espacios vacios y la cantidad de piezas tomadas
-update_line(Player,Round,L:F:Color,NewPlayer,Diff,Piece):-
-    member_dict(factories,Round,Factories),
-    member_dict(F,Factories,Fac),
-    member_dict(preparation,Player,Preparation),
-    member_dict(L,Preparation,Line),
-    member_dict(zone,Line,Zone),
-    count(Zone,empty,Empty),
-    count(Fac,Color,Amount),
-    update(Zone,Amount,empty,Color,NewZone),
-    count(NewZone,empty,NewEmpty),
-    Diff is min(Empty-Amount,0),
-    % saca las piezas del juego en caso de que sea necesario,luego actualiza los tablesros
-    Piece is (min(NewEmpty - 1,0)* -(L-1)),
-    assing(zone,Line,NewZone,NewLine),
-    assing(valid,NewLine,[Color],ValidLine),
-    assing(L,Preparation,ValidLine,NewPreparation),
-    assing(preparation,Player,NewPreparation,NewPlayer).
+update_line(Player, Round, L:F:Color, NewPlayer, Diff, Tiles) :-
+    member_dict(factories, Round, Factories),
+    member_dict(F, Factories, Fac),
+    member_dict(preparation, Player, Preparation),
+    member_dict(L, Preparation, Line),
+    member_dict(zone, Line, Zone),
+    count(Zone, empty, Empty),
+    count(Fac, Color, Amount),
+    update(Zone, Amount, empty, Color, NewZone),
+    count(NewZone, empty, NewEmpty),
+    Diff is min(Empty-Amount, 0),
+    Tiles is (min(NewEmpty - 1, 0) * -(L - 1)),
+    % debug_log(["Player new pattern line ", L, " is -> ", NewStocks]),
+    assing(zone, Line, NewZone, NewLine),
+    assing(valid, NewLine, [Color], ValidLine),
+    assing(L, Preparation, ValidLine, NewPreparation),
+    assing(preparation, Player, NewPreparation, NewPlayer).
 count(List,Value,R):-
     findall(1,member(Value,List),K),
     length(K,R).
 % cambia en un numero igual a total de veces las repeticiones de 
 % value en List y las sustituye por NewValue
-update(List,0,_,_,List):-!.
-update(List,_,Value,_,List):-
-    not(member(Value,List)),!.
-update(List,Total,Value,NewValue,R):-
-    Total>0,
-    Z is Total-1,
-    my_concat(A,[Value|B],List),!,
-    update(B,Z,Value,NewValue,K),
-    my_concat(A,[NewValue|K],R).
+update(L,0,_,_,L):-!.
+update(L,_,V,_,L):-
+    not(member(V,L)),!.
+update(L,T,V,N,R):-
+    T>0,
+    Z is T-1,
+    my_concat(A,[V|B],L),!,
+    update(B,Z,V,N,K),
+    my_concat(A,[N|K],R).
 % Mueve las piezas que no fueron tomadas a la fabricas al centro, y actualiza el estado del las fabricas
 % que fueron vaciadas, actualiza la catidad de piezas que salen del juego en esat ronda
 update_game(Round,_:Fac:Color,NewGame,ActualPiece):-
-    member_dict(factorias,Round,FacRound),
+    member_dict(factories,Round,FacRound),
     member_dict(Fac,FacRound,Factories),
     findall(X,(
         member(X,Factories),
@@ -180,54 +218,68 @@ update_game(Round,_:Fac:Color,NewGame,ActualPiece):-
     member_dict(center,TempFacs,Center),
     my_concat(ToCenter,Center,NewCenter),
     assing(center,TempFacs,NewCenter,NewFacs),
-    assing(factorias,Round,NewFacs,Temp),
-    member_dict(outs,Round,Outs),
+    assing(factories,Round,NewFacs,Temp),
+    member_dict(out,Round,Outs),
     member_dict(Color,Outs,Number),
     Sum is Number + ActualPiece,
     assing(Color,Outs,Sum,NewOuts),
-    assing(outs,Temp,NewOuts,NewGame).
+    assing(out,Temp,NewOuts,NewGame).
 % Obtiene todas las posibles formas de tomar las piezas de las fabricas
 valid_colors(Round,Options):-
     member_dict(factories,Round,Fac),
-    findall(Count:FacId,Color,(
+
+    % writeln(FacId),
+    findall(Count:FacId:Color,(
         member_dict(FacId,Fac,F),
         member(Color,F),
         Color \= empty,
         count(F,Color,Count)
     ),  Options),
+    open("azul.txt",append,Fd),
+    write([Fd,Fac]),
+    nl(Fd),
+    close(Fd),
     not(length(Options,0)).
 % Si el jugador toma mas piezas de las que puede poner en su zona de preparacion , entonces
 % tiene que ser penalizado,luego se calcula en cuanto debe ser penalizado y se actualiza el 
 % score del jugador , se repite el proceso hasta que sea penalizado un numero de veces igual 
 % a la cantidad de fichas sin poner que tenia inicialemnte
-penalize(Player,Amount,NewPlayer):-
+penalize(Player, Amount,P, NewPlayer) :-
     Amount<0,
-    member_dict(penalties,Player,Penalties),
-    length(Penalties,Sz),
-    Sz >0,!,
-    my_concat([P1],R,Penalties),
-    assing(penalties,Player,R,TempPlayer1),
-    member_dict(score,Player,Score),
+    member_dict(ground, Player, Ground),
+    length(Ground, Sz),
+    Sz>0, !,
+    my_concat([P1], R, Ground),
+    print_penalize(Player,P1,P),
+    assing(ground, Player, R, TempPlayer1),
+    member_dict(score, Player, Score),
     NewScore is Score+P1,
-    assing(score,TempPlayer1,NewScore,TempPlayer2),
+    assing(score, TempPlayer1, NewScore, TempPlayer2),
     Times is Amount+1,
-    penalize(TempPlayer2,Times,NewPlayer).
-penalize(Player,_,Player).
+    penalize(TempPlayer2, Times,P, NewPlayer).
+penalize(Player, _,_ ,Player).
+print_penalize(P:ID,P1,1):- 
+    open("azul.txt",append,Fd),
+    write(Fd,[P ,ID ,"recive ", P1, " of penalization"]),
+    nl(Fd),
+    close(Fd).
+print_penalize(_,_,_).
+
 % reviza las lineas que estan llenas y las limpia
-review_lines(P,[],P).
-review_lines(Player,[_:Line|_],NewPlayer):-
-    clean_line(Player,Line,ActualPlayer),!,
-    review_lines(ActualPlayer,Line,NewPlayer).
-review_lines(Player,[_|Lines],NewPlayer):-
-    review_lines(Player,Lines,NewPlayer).
-review_lines(Player,Lines:sorted,NewPlayer):-
-    indexed_sort(Lines,Sorted),
-    review_lines(Player,Sorted,NewPlayer).
+verify_lines(P, [],_, P).
+verify_lines(Player, [_:Line|Lines],Pr, NewPlayer) :-
+    clean_line(Player, Line,Pr, CurPlayer), !,
+    verify_lines(CurPlayer, Lines,Pr, NewPlayer).
+verify_lines(Player, [_|Lines],Pr, NewPlayer) :-
+    verify_lines(Player, Lines,Pr, NewPlayer).
+verify_lines(Player, Lines:unsorted,Pr, NewPlayer) :-
+    indexed_sort(Lines, Sorted),
+    verify_lines(Player, Sorted,Pr, NewPlayer).
 % Obtiene la zona de preparacion del jugador y verfica si la linea que entra como parametro al 
 % predicado esta completa , luego busca cual es el color que el que esta lleno esa linea y 
 % actualiza los colores validos , luego se calcula la columa a la que le corresponde ese color
 % en el muro,se actializa el score, y se actualiza todo el tablero del jugador
-clean_line(Player,L,NewPlayer):-
+clean_line(Player,L,P,NewPlayer):-
     member_dict(preparation,Player,Preparation),
     member_dict(L,Preparation,Line),
     member_dict(all,Line,Colors),
@@ -239,7 +291,7 @@ clean_line(Player,L,NewPlayer):-
     assing(all,Line,List,TempLine),
     assing(valid,TempLine,List,TempLine1),
     column_of(L,C,Column),
-    update_score(Player,(L,Column),TempPlayer),
+    update_score(Player,(L,Column),P,TempPlayer),
     add([],L,empty,Zone),
     assing(zone,TempLine1,Zone,TempLine2),
     assing(L,Preparation,TempLine2,NewPreparation),
@@ -260,29 +312,27 @@ index_of(_,_,-1).
 % Tomamos el board del jugador actual,revisamos si en la linea que entea como parametro se puede
 % poner alguna pieza em caso de que se pueda poner se calculo el score de colocarla y se actualiza
 % el score del jugador,en caso de que no se pueda poner la pieza , se queda igual es score del jugador
-update_score(Player,(Line,Column),NewPlayer):-
+update_score(Player,(Line,Column),Pr,NewPlayer):-
     member_dict(preparation,Player,Preparation),
     member_dict(Line,Preparation,Lines),
     member_dict(zone,Lines,Zone),
     count(Zone,empty,0),!,
-    pieces_score(Player,(Line,Column),Score),
+    pieces_score(Player,[(Line,Column)],Score),
     member_dict(score,Player,PScore),
     Sum is Score+PScore,
-    update_table(Player,(Line,Column),ActualPlayer),
+    update_wall(Player,(Line,Column),Pr,ActualPlayer),
     assing(score,ActualPlayer,Sum,NewPlayer).
-update_score(P,_,P).
+update_score(P,_,_,P).
 % Se obtiene el tablero del jugador actual,se le annade la nueva pieza,se halla ,puntuacion
 % de la fila en la que se puso dicha pieza,se invierte el tablero y se vuelve a hallar, la 
 % puntuacion de la fila en la que se puso la pieza ahora con el tablero invertido
 % teniendo de esta manera la puntuacion por fila y por columna ,luego el score total 
 % es la suma de ambos
-pieces_score(Player,(Row,Column),Score):-
-    member_dict(table,Player,Table),
-    my_concat(Table,[(Row,Column)],NewTable),
-    line_score(NewTable,(Row,Column),RowScore),
-    invert_axis(NewTable,InvertedAxis),
-    line_score(InvertedAxis,(Column,Row),RowScore),
-    invert_axis(NewTable,InvertedAxis),
+pieces_score(Player,[(Row,Column)],Score):-
+    member_dict(wall,Player,Wall),
+    my_concat(Wall,(Row,Column),NewWall),
+    line_score(NewWall,(Row,Column),RowScore),
+    invert_axis(NewWall,InvertedAxis),
     line_score(InvertedAxis,(Column,Row),ColumnScore),
     Score is RowScore+ColumnScore.
 % Busca los intervalos, en los que las piezas son adyacenytes,los recorre y busca 
@@ -308,11 +358,11 @@ blocks([X|L],Index):-
     blocks(R,K),
     my_concat([B],K,Index).
 % Devuelve dos listas, la lista C donde van a estra los puntos que son adyacetes en L , y en R devuelve el resto
-consecutive([(X,B)|L],(X,Y),C,R):-
-    B is Y+1.!,
-    consecutive(L,(X,B),A,R),
-    my_concat([(X,B)],A,C).
-consecutive(L,_,[],L).
+consecutive([(X, B)|L],  (X, Y), C, R) :-
+    B is Y+1, !,
+    consecutive(L,  (X, B), A, R),
+    concat([(X, B)], A, C).
+consecutive(L, _, [], L).
 % invierte L de forma tal que si en el existe el par X,Y , se obtiene en R el par Y,X
 invert_axis(L,R):-
     findall((Y,X),member((X,Y),L),R).
@@ -325,37 +375,50 @@ indexed_sort(L,R):-
 % Se obtienen , todas las posibles jugadas , se calcula que puntuacion se obtiene al efectuarlas,se guardan
 % las jugados con su puntuacion se ordena en una lista , y nos quedamos la que nos de ayor score y esa es 
 % finalmente la que realiza el jugador 
-greedy(Round,Player,NewRound,NewPlayer,O):-
-    options(Round,Player,Options),!,
-    findall(Score:Option,(
-        member(Option,Options),
-        update_player_preparation(Player,Round,Option,_,_,Player_Temp),
-        member_dict(score,Player_Temp,Score)
-    ),Options),
-    sort(Options,Sorted),
-    my_concat(_,[_:O],Sorted),
-    update_player_preparation(Player,Round,O,NewPlayer,Result,_),
-    update_game(Round,O,NewRound,Result).
-% Si no puede poner ninguna pieza en el tablero de preparcion , toma la opcion que menos lo penalize
-greedy(Round,Player,NewRound,NewPlayer,Amount):-
-    valid_colors(Round,Options),
-    sort(Options,[Amount:id:Color|_]),
-    update_game(Round,none:id:Color,NewRound,Amount),
+greedy(Round, Player, NewRound, NewPlayer, O) :-
+    options(Round, Player, Options), !,
+    writeln(Options),
+    % log_mode(ModeId),
+    % set_log_mode(warning),
+    findall(Score:Option, (
+        member(Option, Options),
+        update_player_preparation(Player, Round, Option,0, _, _, TempPlayer),
+        member_dict(score, TempPlayer, Score)    
+    ), Choices),
+    writeln("gredy"),
+    sort(Choices, Sorted),
+    my_concat(_, [_:O], Sorted),
+    % set_log_mode_by_id(ModeId),
+    update_player_preparation(Player, Round, O,1, NewPlayer, Return, _),
+    update_game(Round, O, NewRound, Return).
+greedy(Round, Player, NewRound, NewPlayer, none:Id:Color) :-
+    % writeln(Round),
+    valid_colors(Round, Options), !,
+    sort(Options, [Amount:Id:Color|_]),
+    update_game(Round, none:Id:Color,NewRound, Amount),
+    writeln("greedy1"),
     Neg is Amount* -1,
-    penalize(Player,Neg,NewPlayer).
-greedy(Round,Player,Round,Player,none:none:none).
+    penalize(Player, Neg,1,NewPlayer).
+greedy(Round, Player, Round, Player, none:none:none).
 % Annade la nueva pieza al tablero del jugador actual y le asigan el tablero actualizado al jugador actual
-update_table(Player,Piece,NewPlayer):-
-    member_dict(table,Player,Table),
-    add(Table,1,Piece,NewTable),
-    assing(table,Player,NewTable,NewPlayer).
+update_wall(Player, Piece,P, NewPlayer) :-
+    printwall(Piece,P),
+    member_dict(wall, Player, Wall),
+    add(Wall, 1, Piece, NewWall),
+    assing(wall, Player, NewWall, NewPlayer).
 %inicializa todas los componentes de los jugadores
+printwall(Pieces,1) :- 
+    open("azul.txt",append,Fd),
+    write(Fd,["annade<", Pieces, "> al muro del jugador"]),
+    nl(Fd),
+    close(Fd).
+printwall(_,_).
 clean_players(Round,NewRound):-
     member_dict(players,Round,Players),
     findall(Player:ID,(
         member(X:ID,Players),
         member_dict(board,X,Board),
-        review_lines(X,Board:sorted,CleanedPlayer),
+        verify_lines(X,Board:unsorted,_,CleanedPlayer),
         create_ground(Penalizations),
         assing(penalization,CleanedPlayer, Penalizations,NewPlayer),
         member_dict(score,NewPlayer,ActualScore),
@@ -367,7 +430,11 @@ clean_players(Round,NewRound):-
 inicio(Players,Factories):-
     new_game(Players,Factories,Round),
     new_round(Round,NewRound),
-    run(NewRound,[],EndedRound),!.
+    run(NewRound,[],EndedRound),!,
+    open("azul.txt",write,Fd),
+    write(Fd,[" El juego a terminado" , EndedRound:score]),
+    nl(Fd),
+    close(Fd).
 inicio(_,_).
 % para crear un nuevo juego , primero creamos los jugadores , luego obtenemos las piezas que vamos a utilizar
 % 20 de cada color , luego creamos una lista de tamanno 4 que de momento va a tener en todas las pocisiones empty
@@ -388,6 +455,10 @@ new_game(Players,Factories,[P,A:amounts,O:out,F:factories]):-
 % que se tengan y seleccionan de forma random para empezarlas a annadir a las fabricas, se guardan las 
 % piezas seleccionadas se actualizan la cantidad de pieazas y se crea una nueva ronda
 new_round(Round,NewRound):-
+    open("azul.txt",append,Fd),
+    write(Fd,"Preparando la nueva ronda\n`"),
+    % nl(Fd),
+    close(Fd),
     fill(Round,TempRound1),
     member_dict(amounts,TempRound1,Amounts),
     findall(List,(
@@ -409,7 +480,12 @@ new_round(Round,NewRound):-
     assing(amounts,TempRound1,NewAmounts,TempRound2),
     enumerate(TempFac,1,EnumFac),
     assing(center,EnumFac,[first],AllFac),
-    assing(factories,TempRound2,AllFac,NewRound).
+    assing(factories,TempRound2,AllFac,NewRound),
+    open("azul.txt",append,FD),
+    write(FD,["Empieza la nueva ronda",
+         AllFac:factories ]),
+    nl(FD),
+    close(FD).
 % fill se encarga de que las fabricas esten llenas en la siguiente ronda
 fill(Round,NewRound):-
     member_dict(amounts,Round,Amounts),
@@ -437,7 +513,9 @@ concat_all([X|Y],R):-
 % ejcutando
 run(Round,Events,NewRound):-
     order_players(Round,Players),
+    writeln("OP done"),
     ejecute_round(Round,Players,TempRound,ActualEvents),
+    writeln("ER "),
     my_concat(Events,ActualEvents,NewEvents),
     validate(TempRound,NewEvents,NewRound).
 % Rotorna el orden de los jugadores en el ronda actual
@@ -453,28 +531,34 @@ sort_players(Players,NewPlayers):-
 initial_player(1).
 % comprueba si en esta ronda se acaba el juego 
 validate(Round,Events,NewRound):-
+    writeln("jjj"),
     member_dict(factories,Round,Factories),
     findall(Fac,member(Fac:_,Factories),FacList),
     concat_all(FacList,AllPieces),
     length(AllPieces,Sz),
     count(AllPieces,empty,Sz),!,
     clean_players(Round,TempRound),
+    writeln("validating"),
     final_or_continue(TempRound,Events,NewRound).
 validate(Round,Events,NewRound):-
+    writeln("Not jjj"),
     run(Round,Events,NewRound).
 %  Verifica si el juego a terminado de ser asi calcula la putuacion y en caso contrario sigue ejucutando
 % el juego
 final_or_continue(Round,_,NewRound):-
+    writeln("finiah"),
     ending_condition(Round),!,
     calculate_score(Round,NewRound).
 final_or_continue(Round,Events,NewRound):-
+    writeln("continue"),
     initial_player(ID),
     get_value(center,Events,NewID,ID),
     retract(initial_player(ID)),
     asserta(initial_player(NewID)),
     member_dict(players,Round,Players),
     member_dict(NewID,Players,FirstPlayer),   
-    penalize(FirstPlayer,-1,NewFirstPlayer),
+    penalize(FirstPlayer,-1,1,NewFirstPlayer),
+    writeln("here"),
     assing(NewID,Players,NewFirstPlayer,NewPlayers),
     assing(players,Round,NewPlayers,TempRound1),
     new_round(TempRound1,TempRound2),
